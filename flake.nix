@@ -21,7 +21,7 @@
         buildInputs = with pkgs; [
           zls.packages.${system}.default
           zig-overlay.packages.${system}.master
-          nc # (netcat) arbitrary TCP and UDP connections and listens
+          netcat # (netcat) arbitrary TCP and UDP connections and listens
           dig # for issuing dns requests
           hexyl # for inspecting raw bytes
         ];
