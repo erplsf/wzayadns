@@ -1,5 +1,13 @@
 # wzayadns
 
+## Goals
+* Fun
+* Compliance
+
+## Non-goals
+* Performance
+* Stability
+
 Used materials:
 * https://datatracker.ietf.org/doc/html/rfc1035
 * https://beej.us/guide/bgnet/html/#setsockoptman
