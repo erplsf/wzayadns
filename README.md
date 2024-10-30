@@ -1,4 +1,4 @@
-# wzayadns
+# wzayadns - Written in Zig Andriy's Yet Another DNS Non-state-or-bullshit-controlled Server
 
 ## Goals
 * Fun
