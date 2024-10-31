@@ -124,21 +124,7 @@ pub fn main() !void {
 
         const data = buf[0..read];
         const raw_header = data[0..12];
-        std.debug.print("{b:0>8}\n", .{raw_header});
-
-        // const h = Header{
-        //     .id = 2,
-        //     .response = false,
-        //     .opcode = Opcode.Query,
-        //     .flags = Flags{ .RD = true },
-        //     .Z = 0b010,
-        //     .rcode = ResponseCode.NoError,
-        //     .QCount = 1,
-        //     .ANCount = 0,
-        //     .NSCount = 0,
-        //     .ARCount = 0,
-        // };
-        // std.debug.print("{b:0>8}\n", .{@as(u96, @bitCast(h))});
+        // std.debug.print("{b:0>8}\n", .{raw_header});
 
         const header: Header = Header.decode(raw_header);
         std.debug.print("{}\n", .{header});
