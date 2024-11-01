@@ -31,6 +31,7 @@ const ResponseCode = enum(u4) {
     _, // all other values (6-15) are reserved for future use
 };
 
+// TODO: make it proper packed struct, to be able to @bitCast it (and maybe @bitReverse before/after)
 const Header = packed struct(u96) {
     id: u16, // 16 bits
     response: bool, // 1 bit
@@ -43,37 +44,29 @@ const Header = packed struct(u96) {
     NSCount: u16, // 16 bits
     ARCount: u16, // 16 bits
 
-    pub fn decode(buf: []const u8) Header {
-        var pos: usize = 0;
+    pub fn decode(buf: *std.io.FixedBufferStream([]const u8)) Header {
+        const reader = buf.reader();
+        const id: u16 = reader.readInt(u16, .big) catch unreachable;
 
-        const id: u16 = std.mem.readInt(u16, buf[pos .. pos + 2][0..2], .big);
-        pos += 2;
+        var byte = reader.readByte() catch unreachable;
+        const response: bool = byte & 0b10000000 == 1; // 1 bit
+        const opcode: Opcode = @enumFromInt(@as(u4, @truncate(@shrExact(byte & 0b01111000, 3)))); // 4 bits
 
-        const response = buf[pos] & 0b10000000 == 1; // 1 bit
+        const part: u8 = @shlExact(byte, 1);
 
-        const opcode: Opcode = @enumFromInt(@as(u4, @truncate(@shrExact(buf[pos] & 0b01111000, 3)))); // 4 bits
+        byte = reader.readByte() catch unreachable;
+        const second_part: u8 = byte >> 7;
 
-        const part: u8 = @shlExact(buf[pos .. pos + 1][0], 1);
-        pos += 1;
-        const second_part: u8 = buf[pos .. pos + 1][0] >> 7;
         const flags: Flags = @bitCast(@bitReverse(@as(u4, @truncate(part | second_part)))); // bit reverse is needed because of endian/order shenenigans, 4 bits
 
-        const z: u3 = @as(u3, @truncate(@shrExact(buf[pos] & 0b01110000, 4))); // 3 bits
+        const z: u3 = @as(u3, @truncate(@shrExact(byte & 0b01110000, 4))); // 3 bits
 
-        const rcode: ResponseCode = @enumFromInt(@as(u4, @truncate(buf[pos] & 0b00001111))); // 4 bits
-        pos += 1;
+        const rcode: ResponseCode = @enumFromInt(@as(u4, @truncate(byte & 0b00001111))); // 4 bits
 
-        const qcount: u16 = std.mem.readInt(u16, buf[pos .. pos + 2][0..2], .big);
-        pos += 2;
-
-        const ancount: u16 = std.mem.readInt(u16, buf[pos .. pos + 2][0..2], .big);
-        pos += 2;
-
-        const nscount: u16 = std.mem.readInt(u16, buf[pos .. pos + 2][0..2], .big);
-        pos += 2;
-
-        const arcount: u16 = std.mem.readInt(u16, buf[pos .. pos + 2][0..2], .big);
-        pos += 2;
+        const qcount: u16 = reader.readInt(u16, .big) catch unreachable;
+        const ancount: u16 = reader.readInt(u16, .big) catch unreachable;
+        const nscount: u16 = reader.readInt(u16, .big) catch unreachable;
+        const arcount: u16 = reader.readInt(u16, .big) catch unreachable;
 
         return .{
             .id = id,
@@ -90,11 +83,85 @@ const Header = packed struct(u96) {
     }
 };
 
-const RR = packed struct {
+const Type = enum(u16) {
+    // Regular types
+    A = 1,
+    NS = 2,
+    MD = 3, // obsolete, use MX
+    MF = 4, // obsolete, use MX
+    CNAME = 5,
+    SOA = 6,
+    MB = 7, // experimental
+    MG = 8, // experimental
+    MR = 9, // experimental
+    NULL = 10, // experimental
+    WKS = 11,
+    PTR = 12,
+    HINFO = 13,
+    MINFO = 14,
+    MX = 15,
+    TXT = 16,
+
+    // Only appear in questions
+    AXFR = 252,
+    MAILB = 253,
+    MAILA = 253, // obsolete, see MX
+    @"*" = 255, // a request for all records
+
+    _,
+};
+
+const Class = enum(16) {
+    // Regular classes
+    IN = 1,
+    CS = 2,
+    CH = 3,
+    HS = 4,
+
+    @"*" = 255, // a request for all classes
+
+    _,
+};
+
+const Question = struct {
+    qname: []const u8,
+    type: Type,
+    qclass: Class,
+};
+
+const ResourceRecord = struct {
+    name: []const u8,
+    type: Type,
+    class: Class,
+    ttl: i32,
+    rdlength: u16,
+    rdata: []const u8,
+};
+
+const RequestResponse = struct {
     header: Header,
+    // question: []Question,
+    // answer: []ResourceRecord,
+    // authority: []ResourceRecord,
+    // additional: []ResourceRecord,
+
+    pub fn decode(allocator: std.mem.Allocator, buf: []const u8) RequestResponse {
+        _ = allocator;
+        var bufStream = std.io.fixedBufferStream(buf);
+
+        const header = Header.decode(&bufStream);
+
+        return .{
+            .header = header,
+        };
+    }
 };
 
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
     const address = try std.net.Address.parseIp("127.0.0.1", 5353);
 
     const tpe: u32 = posix.SOCK.DGRAM;
@@ -123,11 +190,11 @@ pub fn main() !void {
         std.debug.print("[{}] -> ", .{client_address});
 
         const data = buf[0..read];
-        const raw_header = data[0..12];
+        // const raw_header = data[0..12];
         // std.debug.print("{b:0>8}\n", .{raw_header});
 
-        const header: Header = Header.decode(raw_header);
-        std.debug.print("{}\n", .{header});
+        const rr: RequestResponse = RequestResponse.decode(allocator, data);
+        std.debug.print("{}\n", .{rr});
 
         // const request: *Header = @alignCast(@ptrCast(header));
 
