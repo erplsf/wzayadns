@@ -104,6 +104,26 @@ const Header = packed struct(u96) {
     }
 };
 
+test "header decodes/encodes to the same byte sequence" {
+    const raw_header: []const u8 = &[_]u8{
+        0xee, 0x9c, 0x01, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    var fb = std.io.fixedBufferStream(raw_header);
+
+    const allocator = std.testing.allocator;
+
+    var list = std.ArrayListUnmanaged(u8){};
+    defer list.deinit(allocator);
+
+    const writer = list.writer(allocator);
+
+    const header = try Header.decode(&fb);
+    try writer.print("{w}", .{header});
+
+    try std.testing.expectEqualSlices(u8, raw_header, list.items);
+}
+
 const Type = enum(u16) {
     // Regular types
     A = 1,
