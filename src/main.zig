@@ -2,11 +2,6 @@ const std = @import("std");
 const net = std.net;
 const posix = std.posix;
 
-// const RRType = enum(u1) {
-//     Query = 0,
-//     Response = 1,
-// };
-
 const Opcode = enum(u4) {
     Query = 0,
     InverseQuery = 1,
