@@ -399,3 +399,6 @@ pub fn main() !void {
         }
     }
 }
+
+// TODO: add test that verify that all parts decode and encode into the same byte sequence
+// TODO: add tests that verifies values after decoding
