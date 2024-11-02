@@ -100,7 +100,7 @@ const Header = packed struct(u96) {
             try writer.writeInt(u16, self.ANCount, .big);
             try writer.writeInt(u16, self.NSCount, .big);
             try writer.writeInt(u16, self.ARCount, .big);
-        } // TODO: implement other (default) formatter
+        } // TODO: implement other (human readable) formatter
     }
 };
 
