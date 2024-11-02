@@ -31,6 +31,8 @@ const ResponseCode = enum(u4) {
     _, // all other values (6-15) are reserved for future use
 };
 
+const FBType = std.io.FixedBufferStream([]const u8);
+
 // TODO: make it proper packed struct, to be able to @bitCast it (and maybe @bitReverse before/after)
 const Header = packed struct(u96) {
     id: u16, // 16 bits
@@ -44,17 +46,17 @@ const Header = packed struct(u96) {
     NSCount: u16, // 16 bits
     ARCount: u16, // 16 bits
 
-    pub fn decode(buf: *std.io.FixedBufferStream([]const u8)) Header {
+    pub fn decode(buf: *FBType) !Header {
         const reader = buf.reader();
-        const id: u16 = reader.readInt(u16, .big) catch unreachable;
+        const id: u16 = try reader.readInt(u16, .big);
 
-        var byte = reader.readByte() catch unreachable;
+        var byte = try reader.readByte();
         const response: bool = byte & 0b10000000 == 1; // 1 bit
         const opcode: Opcode = @enumFromInt(@as(u4, @truncate(@shrExact(byte & 0b01111000, 3)))); // 4 bits
 
         const part: u8 = @shlExact(byte, 1);
 
-        byte = reader.readByte() catch unreachable;
+        byte = try reader.readByte();
         const second_part: u8 = byte >> 7;
 
         const flags: Flags = @bitCast(@bitReverse(@as(u4, @truncate(part | second_part)))); // bit reverse is needed because of endian/order shenenigans, 4 bits
@@ -63,10 +65,10 @@ const Header = packed struct(u96) {
 
         const rcode: ResponseCode = @enumFromInt(@as(u4, @truncate(byte & 0b00001111))); // 4 bits
 
-        const qcount: u16 = reader.readInt(u16, .big) catch unreachable;
-        const ancount: u16 = reader.readInt(u16, .big) catch unreachable;
-        const nscount: u16 = reader.readInt(u16, .big) catch unreachable;
-        const arcount: u16 = reader.readInt(u16, .big) catch unreachable;
+        const qcount: u16 = try reader.readInt(u16, .big);
+        const ancount: u16 = try reader.readInt(u16, .big);
+        const nscount: u16 = try reader.readInt(u16, .big);
+        const arcount: u16 = try reader.readInt(u16, .big);
 
         return .{
             .id = id,
@@ -105,13 +107,13 @@ const Type = enum(u16) {
     // Only appear in questions
     AXFR = 252,
     MAILB = 253,
-    MAILA = 253, // obsolete, see MX
+    MAILA = 254, // obsolete, see MX
     @"*" = 255, // a request for all records
 
     _,
 };
 
-const Class = enum(16) {
+const Class = enum(u16) {
     // Regular classes
     IN = 1,
     CS = 2,
@@ -123,10 +125,59 @@ const Class = enum(16) {
     _,
 };
 
+// TODO: add DoS protection - limit maximum jumps
+// FIXME: leaks memory
+pub fn decode_name(allocator: std.mem.Allocator, buf: *FBType) ![]const u8 {
+    const reader = buf.reader();
+
+    var result = std.ArrayList(u8).init(allocator);
+    errdefer result.deinit();
+
+    while (true) {
+        const length = try reader.readByte();
+        if (length == 0) break; // null byte, end of label, break out
+
+        if (length & 0b11000000 == 1) { // it's an offset
+            try buf.seekBy(-1); // move back one byte
+            const offset = try reader.readInt(u16, .big) ^ 0b11000000_00000000; // clean offset
+            try buf.seekTo(offset); // move cursor to correct position
+            continue; // start loop again
+        }
+
+        try result.appendSlice(buf.buffer[buf.pos .. buf.pos + length]);
+        try result.append('.');
+
+        try buf.seekBy(length); // move the cursor forward
+    }
+
+    return try result.toOwnedSlice();
+}
+
 const Question = struct {
-    qname: []const u8,
+    name: []const u8,
     type: Type,
-    qclass: Class,
+    class: Class,
+
+    pub fn decode(allocator: std.mem.Allocator, buf: *FBType) !Question {
+        const reader = buf.reader();
+
+        const name = try decode_name(allocator, buf);
+        const @"type": Type = @enumFromInt(try reader.readInt(u16, .big));
+        const class: Class = @enumFromInt(try reader.readInt(u16, .big));
+
+        return .{
+            .name = name,
+            .type = @"type",
+            .class = class,
+        };
+    }
+
+    pub fn format(self: Question, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("[Q: {s}, T: {}, C: {}]", .{ self.name, self.type, self.class });
+    }
 };
 
 const ResourceRecord = struct {
@@ -140,19 +191,27 @@ const ResourceRecord = struct {
 
 const RequestResponse = struct {
     header: Header,
-    // question: []Question,
+    questions: []Question,
     // answer: []ResourceRecord,
     // authority: []ResourceRecord,
     // additional: []ResourceRecord,
 
-    pub fn decode(allocator: std.mem.Allocator, buf: []const u8) RequestResponse {
-        _ = allocator;
+    // FIXME: leaks memory
+    pub fn decode(allocator: std.mem.Allocator, buf: []const u8) !RequestResponse {
         var bufStream = std.io.fixedBufferStream(buf);
 
-        const header = Header.decode(&bufStream);
+        const header = try Header.decode(&bufStream);
+
+        const questions = try allocator.alloc(Question, header.QCount);
+        errdefer allocator.free(questions);
+
+        for (0..header.QCount) |idx| {
+            questions[idx] = try Question.decode(allocator, &bufStream);
+        }
 
         return .{
             .header = header,
+            .questions = questions,
         };
     }
 };
@@ -193,7 +252,7 @@ pub fn main() !void {
         // const raw_header = data[0..12];
         // std.debug.print("{b:0>8}\n", .{raw_header});
 
-        const rr: RequestResponse = RequestResponse.decode(allocator, data);
+        const rr: RequestResponse = try RequestResponse.decode(allocator, data);
         std.debug.print("{}\n", .{rr});
 
         // const request: *Header = @alignCast(@ptrCast(header));
