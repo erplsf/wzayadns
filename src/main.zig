@@ -269,7 +269,7 @@ const RequestResponse = struct {
 
     header: Header,
     questions: []Question,
-    answers: []ResourceRecord,
+    answers: std.ArrayListUnmanaged(ResourceRecord),
     authorities: []ResourceRecord,
     additionals: []ResourceRecord,
 
@@ -282,8 +282,8 @@ const RequestResponse = struct {
         const questions = try allocator.alloc(Question, header.QCount);
         errdefer allocator.free(questions);
 
-        const answers = try allocator.alloc(ResourceRecord, header.ANCount);
-        errdefer allocator.free(answers);
+        var answers = try std.ArrayListUnmanaged(ResourceRecord).initCapacity(allocator, header.ANCount);
+        errdefer answers.deinit(allocator);
 
         const authorities = try allocator.alloc(ResourceRecord, header.NSCount);
         errdefer allocator.free(authorities);
@@ -295,8 +295,8 @@ const RequestResponse = struct {
             questions[idx] = try Question.decode(allocator, &bufStream);
         }
 
-        for (0..header.ANCount) |idx| {
-            answers[idx] = try ResourceRecord.decode(allocator, &bufStream);
+        for (0..header.ANCount) |_| {
+            try answers.append(allocator, try ResourceRecord.decode(allocator, &bufStream));
         }
 
         for (0..header.NSCount) |idx| {
