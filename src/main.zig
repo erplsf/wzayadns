@@ -142,6 +142,7 @@ const Class = enum(u16) {
 };
 
 // TODO: add DoS protection - limit maximum jumps
+// TODO: add more protections from another RFC document
 // FIXME: leaks memory
 pub fn decode_name(allocator: std.mem.Allocator, buf: *FBType) ![]const u8 {
     const reader = buf.reader();
