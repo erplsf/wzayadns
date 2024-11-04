@@ -105,7 +105,21 @@ const Header = packed struct(u96) {
             try writer.writeInt(u16, self.ANCount, .big);
             try writer.writeInt(u16, self.NSCount, .big);
             try writer.writeInt(u16, self.ARCount, .big);
-        } // TODO: implement other (human readable) formatter
+        } else {
+            const kind = if (self.response) "RS" else "RQ";
+            try writer.print("Header{{ID: {}, RQ/RS: {s}, OP: {}, FL: {}, Z: {}, RC: {}, QC: {}, ANC: {}, NSC: {}, ARC: {}}}", .{
+                self.id,
+                kind,
+                self.opcode,
+                self.flags,
+                self.Z,
+                self.rcode,
+                self.QCount,
+                self.ANCount,
+                self.NSCount,
+                self.ARCount,
+            });
+        }
     }
 };
 
