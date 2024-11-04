@@ -334,29 +334,19 @@ pub fn main() !void {
         std.debug.print("[{}] -> ", .{client_address});
 
         const request = buf[0..read];
-        // const raw_header = data[0..12];
-        // std.debug.print("{b:0>8}\n", .{raw_header});
 
         const rr: RequestResponse = try RequestResponse.decode(allocator, request);
         std.debug.print("{}\n", .{rr});
 
-        var r = std.ArrayList(u8).init(allocator);
-        defer r.deinit();
+        // const wrote = posix.sendto(socket, request, 0, &client_address.any, client_address_len) catch |err| {
+        //     std.debug.print("error writing: {}\n", .{err});
+        //     continue;
+        // };
 
-        const wr = r.writer();
-        try wr.print("{w}", .{rr.header});
-        std.debug.print("{b:0>8}\n", .{request[0..12]});
-        std.debug.print("{b:0>8}\n", .{r.items});
-
-        const wrote = posix.sendto(socket, request, 0, &client_address.any, client_address_len) catch |err| {
-            std.debug.print("error writing: {}\n", .{err});
-            continue;
-        };
-
-        if (wrote != read) {
-            std.debug.print("couldn't write the whole response back, exiting!", .{});
-            break;
-        }
+        // if (wrote != read) {
+        //     std.debug.print("couldn't write the whole response back, exiting!", .{});
+        //     break;
+        // }
     }
 }
 
