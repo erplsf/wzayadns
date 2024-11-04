@@ -265,6 +265,8 @@ const ResourceRecord = struct {
 };
 
 const RequestResponse = struct {
+    allocator: std.mem.Allocator,
+
     header: Header,
     questions: []Question,
     answers: []ResourceRecord,
@@ -306,6 +308,7 @@ const RequestResponse = struct {
         }
 
         return .{
+            .allocator = allocator,
             .header = header,
             .questions = questions,
             .answers = answers,
