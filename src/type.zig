@@ -33,6 +33,12 @@ pub const AData = struct {
 
     // FIXME: leaks memory
     pub fn decode(allocator: std.mem.Allocator, addr: u32) !RData {
+        const data = try AData.decode_ipv4(allocator, addr);
+
+        return .{ .A = .{ .ipv4 = data } };
+    }
+
+    pub fn decode_ipv4(allocator: std.mem.Allocator, addr: u32) ![]const u8 {
         const a = (addr & 0xff000000) >> 24;
         const b = (addr & 0x00ff0000) >> 16;
         const c = (addr & 0x0000ff00) >> 8;
@@ -46,7 +52,19 @@ pub const AData = struct {
 
         const data = try result.toOwnedSlice(allocator);
 
-        return .{ .A = .{ .ipv4 = data } };
+        return data;
+    }
+
+    pub fn encode_ipv4(ipv4: []const u8) !u32 {
+        var it = std.mem.splitScalar(u8, ipv4, '.');
+        var addr: u32 = 0;
+        var shift_amt: u5 = 24;
+        while (it.next()) |part| : (shift_amt -= 8) {
+            const num = try std.fmt.parseUnsigned(u32, part, 10);
+            addr |= num << shift_amt;
+            if (shift_amt == 0) break;
+        }
+        return addr;
     }
 
     pub fn format(self: AData, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -56,6 +74,23 @@ pub const AData = struct {
         try writer.print("{s}", .{self.ipv4});
     }
 };
+
+test "encode_ipv4" {
+    try std.testing.expectEqual(2130706433, try AData.encode_ipv4("127.0.0.1"));
+    try std.testing.expectEqual(4294967295, try AData.encode_ipv4("255.255.255.255"));
+}
+
+test "decode_ipv4" {
+    const allocator = std.testing.allocator;
+
+    var ipv4 = try AData.decode_ipv4(allocator, 2130706433);
+    try std.testing.expectEqualStrings("127.0.0.1", ipv4);
+    allocator.free(ipv4);
+
+    ipv4 = try AData.decode_ipv4(allocator, 4294967295);
+    try std.testing.expectEqualStrings("255.255.255.255", ipv4);
+    allocator.free(ipv4);
+}
 
 pub const RData = union(Type) {
     A: AData,

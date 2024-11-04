@@ -2,7 +2,7 @@ const std = @import("std");
 const net = std.net;
 const posix = std.posix;
 
-const dns_type = @import("./type.zig");
+const dns_type = @import("type.zig");
 const Type = dns_type.Type;
 const AData = dns_type.AData;
 const RData = dns_type.RData;
@@ -256,6 +256,11 @@ const ResourceRecord = struct {
         };
     }
 
+    // FIXME: leaks memory
+    pub fn build(allocator: std.mem.Allocator) void {
+        _ = allocator;
+    }
+
     pub fn format(self: ResourceRecord, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
@@ -316,6 +321,10 @@ const RequestResponse = struct {
             .additionals = additionals,
         };
     }
+
+    pub fn addAnswer(self: *RequestResponse, record: ResourceRecord) !void {
+        try self.answers.append(self.allocator, record);
+    }
 };
 
 pub fn main() !void {
@@ -365,6 +374,10 @@ pub fn main() !void {
         //     break;
         // }
     }
+}
+
+test {
+    _ = @import("type.zig");
 }
 
 // TODO: add test that verify that all parts decode and encode into the same byte sequence
