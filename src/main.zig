@@ -475,6 +475,7 @@ pub fn main() !void {
     try posix.bind(socket, &address.any, address.getOsSockLen());
 
     var request_buffer: [512]u8 = undefined;
+    var response_buffer: [512]u8 = undefined;
 
     while (true) {
         var client_address: net.Address = undefined;
@@ -507,14 +508,12 @@ pub fn main() !void {
         try rr.addAnswer(record);
         std.debug.print("{}\n", .{rr});
 
-        var response = std.ArrayListUnmanaged(u8){};
-        defer response.deinit(allocator);
-
-        const writer = response.writer(allocator);
+        var stream = std.io.fixedBufferStream(response_buffer[0..]);
+        const writer = stream.writer();
 
         try rr.encode(writer);
 
-        _ = posix.sendto(socket, response.items, 0, &client_address.any, client_address_len) catch |err| {
+        _ = posix.sendto(socket, stream.getWritten(), 0, &client_address.any, client_address_len) catch |err| {
             std.debug.print("error writing: {}\n", .{err});
             continue;
         };
