@@ -10,6 +10,7 @@
 
 Used materials:
 * https://datatracker.ietf.org/doc/html/rfc1035
+* https://datatracker.ietf.org/doc/rfc9267/
 * https://beej.us/guide/bgnet/html/#setsockoptman
 * https://www.openmymind.net/TCP-Server-In-Zig-Part-1-Single-Threaded/
 * https://gist.github.com/miekg/a61d55a8ec6560ad6c4a2747b21e6128
