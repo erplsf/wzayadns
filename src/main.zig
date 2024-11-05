@@ -84,43 +84,47 @@ const Header = packed struct(u96) {
         };
     }
 
-    pub fn format(self: Header, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = options;
+    pub fn encode(self: Header, allocator: std.mem.Allocator, writer: anytype) !void {
+        _ = allocator;
 
-        if (comptime std.mem.eql(u8, fmt, "w")) {
-            try writer.writeInt(u16, self.id, .big); // write id, 16 bits
+        try writer.writeInt(u16, self.id, .big); // write id, 16 bits
 
-            var first_part: u8 = 0;
-            var second_part: u8 = 0;
-            first_part |= @as(u8, @intCast(@as(u1, @bitCast(self.response)))) << 7; // 1 bit
-            first_part |= @as(u8, @intFromEnum(self.opcode)) << 3; // 4 bits
-            first_part |= @as(u8, @bitReverse(@as(u4, @bitCast(self.flags)))) >> 1; // 3 bits of flags go into first byte
-            second_part |= @as(u8, @bitReverse(@as(u4, @bitCast(self.flags)))) << 7; // 1 bits of flags go into second byte
-            second_part |= @as(u8, @intCast(@as(u3, @bitCast(self.Z)))) << 4; // 3 bits
-            second_part |= @as(u8, @intFromEnum(self.rcode)); // 4 bits
-            try writer.writeByte(first_part);
-            try writer.writeByte(second_part);
+        var first_part: u8 = 0;
+        var second_part: u8 = 0;
+        first_part |= @as(u8, @intCast(@as(u1, @bitCast(self.response)))) << 7; // 1 bit
+        first_part |= @as(u8, @intFromEnum(self.opcode)) << 3; // 4 bits
+        first_part |= @as(u8, @bitReverse(@as(u4, @bitCast(self.flags)))) >> 1; // 3 bits of flags go into first byte
+        second_part |= @as(u8, @bitReverse(@as(u4, @bitCast(self.flags)))) << 7; // 1 bits of flags go into second byte
+        second_part |= @as(u8, @intCast(@as(u3, @bitCast(self.Z)))) << 4; // 3 bits
+        second_part |= @as(u8, @intFromEnum(self.rcode)); // 4 bits
+        try writer.writeByte(first_part);
+        try writer.writeByte(second_part);
 
-            try writer.writeInt(u16, self.QCount, .big);
-            try writer.writeInt(u16, self.ANCount, .big);
-            try writer.writeInt(u16, self.NSCount, .big);
-            try writer.writeInt(u16, self.ARCount, .big);
-        } else {
-            const kind = if (self.response) "RS" else "RQ";
-            try writer.print("Header{{ID: {}, RQ/RS: {s}, OP: {}, FL: {}, Z: {}, RC: {}, QC: {}, ANC: {}, NSC: {}, ARC: {}}}", .{
-                self.id,
-                kind,
-                self.opcode,
-                self.flags,
-                self.Z,
-                self.rcode,
-                self.QCount,
-                self.ANCount,
-                self.NSCount,
-                self.ARCount,
-            });
-        }
+        try writer.writeInt(u16, self.QCount, .big);
+        try writer.writeInt(u16, self.ANCount, .big);
+        try writer.writeInt(u16, self.NSCount, .big);
+        try writer.writeInt(u16, self.ARCount, .big);
     }
+
+    // pub fn format(self: Header, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    //     _ = options;
+
+    //     if (comptime std.mem.eql(u8, fmt, "w")) {} else {
+    //         const kind = if (self.response) "RS" else "RQ";
+    //         try writer.print("Header{{ID: {}, RQ/RS: {s}, OP: {}, FL: {}, Z: {}, RC: {}, QC: {}, ANC: {}, NSC: {}, ARC: {}}}", .{
+    //             self.id,
+    //             kind,
+    //             self.opcode,
+    //             self.flags,
+    //             self.Z,
+    //             self.rcode,
+    //             self.QCount,
+    //             self.ANCount,
+    //             self.NSCount,
+    //             self.ARCount,
+    //         });
+    //     }
+    // }
 };
 
 test "header decodes/encodes to the same byte sequence" {
@@ -138,7 +142,7 @@ test "header decodes/encodes to the same byte sequence" {
     const writer = list.writer(allocator);
 
     const header = try Header.decode(&fb);
-    try writer.print("{w}", .{header});
+    try header.encode(allocator, writer);
 
     try std.testing.expectEqualSlices(u8, raw_header, list.items);
 }
@@ -189,6 +193,31 @@ pub fn decode_name(allocator: std.mem.Allocator, buf: *FBType) ![]const u8 {
     return try result.toOwnedSlice();
 }
 
+// FIXME: leaks memory
+// TODO: add test first thing tomorrow!
+pub fn encode_name(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    var result = std.ArrayListUnmanaged(u8){};
+    errdefer result.deinit(allocator);
+
+    const writer = result.writer(allocator);
+
+    var it = std.mem.splitScalar(u8, name, '.');
+
+    var last_len: usize = 0;
+
+    while (it.next()) |part| {
+        try writer.writeInt(u8, @intCast(part.len), .big);
+        try writer.writeAll(part);
+        last_len = part.len;
+    }
+
+    if (last_len != 0) { // if the user didn't provide a dot at the end, append the end of the name of an empty byte
+        try writer.writeByte(0x0);
+    }
+
+    return try result.toOwnedSlice(allocator);
+}
+
 const Question = struct {
     name: []const u8,
     type: Type,
@@ -208,18 +237,28 @@ const Question = struct {
         };
     }
 
-    pub fn format(self: Question, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn encode(self: Question, allocator: std.mem.Allocator, writer: anytype) !void {
+        const name = try encode_name(allocator, self.name);
 
-        try writer.print("[Q: {s}, T: {}, C: {}]", .{ self.name, self.type, self.class });
+        try writer.writeAll(name);
+        try writer.writeInt(u16, @intFromEnum(self.type), .big);
+        try writer.writeInt(u16, @intFromEnum(self.class), .big);
     }
+
+    // pub fn format(self: Question, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    //     _ = options;
+
+    //     if (comptime std.mem.eql(u8, fmt, "w")) {
+    //     } else {
+    //         try writer.print("[Q: {s}, T: {}, C: {}]", .{ self.name, self.type, self.class });
+    //     }
+    // }
 };
 
 const ResourceRecord = struct {
     name: []const u8,
-    type: Type,
-    class: Class,
+    type: Type, // 16 bits
+    class: Class, // 16 bits
     ttl: u32,
     rdlength: u16,
     rdata: RData,
@@ -261,12 +300,25 @@ const ResourceRecord = struct {
         _ = allocator;
     }
 
-    pub fn format(self: ResourceRecord, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn encode(self: ResourceRecord, allocator: std.mem.Allocator, writer: anytype) !void {
+        const name = try encode_name(allocator, self.name);
 
-        try writer.print("[N: {s}, T: {}, C: {}, TTL: {d}, RDL: {d}: RD: {}]", .{ self.name, self.type, self.class, self.ttl, self.rdlength, self.rdata });
+        try writer.writeAll(name);
+        try writer.writeInt(u16, @intFromEnum(self.type), .big);
+        try writer.writeInt(u16, @intFromEnum(self.class), .big);
+        try writer.writeInt(u32, self.ttl, .big);
+        try writer.writeInt(u16, 4, .big); // FIXME: hardcoded size for this type
+        try writer.print("{w}", .{self.rdata.A}); // FIXME: hardcoded union type
     }
+
+    // HACK: doesn't do compression
+    // pub fn format(self: ResourceRecord, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    //     _ = options;
+
+    //     if (comptime std.mem.eql(u8, fmt, "w")) {} else {
+    //         try writer.print("[N: {s}, T: {}, C: {}, TTL: {d}, RDL: {d}: RD: {}]", .{ self.name, self.type, self.class, self.ttl, self.rdlength, self.rdata });
+    //     }
+    // }
 };
 
 const RequestResponse = struct {
@@ -322,9 +374,45 @@ const RequestResponse = struct {
         };
     }
 
+    pub fn encode(self: RequestResponse, writer: anytype) !void {
+        try self.header.encode(self.allocator, writer);
+        for (self.questions) |i| {
+            try i.encode(self.allocator, writer);
+        }
+        for (self.answers.items) |i| {
+            try i.encode(self.allocator, writer);
+        }
+        for (self.authorities) |i| {
+            try i.encode(self.allocator, writer);
+        }
+        for (self.additionals) |i| {
+            try i.encode(self.allocator, writer);
+        }
+    }
+
     pub fn addAnswer(self: *RequestResponse, record: ResourceRecord) !void {
         try self.answers.append(self.allocator, record);
     }
+
+    // pub fn format(self: RequestResponse, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    //     _ = options;
+
+    //     if (comptime std.mem.eql(u8, fmt, "w")) {} else {
+    //         try writer.print("{}", .{self.header});
+    //         for (self.questions) |i| {
+    //             try writer.print("{}", .{i});
+    //         }
+    //         for (self.answers.items) |i| {
+    //             try writer.print("{}", .{i});
+    //         }
+    //         for (self.authorities) |i| {
+    //             try writer.print("{}", .{i});
+    //         }
+    //         for (self.additionals) |i| {
+    //             try writer.print("{}", .{i});
+    //         }
+    //     }
+    // }
 };
 
 pub fn main() !void {
@@ -361,13 +449,33 @@ pub fn main() !void {
 
         const request = buf[0..read];
 
-        const rr: RequestResponse = try RequestResponse.decode(allocator, request);
+        var rr: RequestResponse = try RequestResponse.decode(allocator, request);
         std.debug.print("{}\n", .{rr});
 
-        // const wrote = posix.sendto(socket, request, 0, &client_address.any, client_address_len) catch |err| {
-        //     std.debug.print("error writing: {}\n", .{err});
-        //     continue;
-        // };
+        rr.header.response = true;
+        rr.header.flags = .{ .AA = true };
+        rr.header.Z = 0;
+        rr.header.ANCount = 1;
+
+        const adata: AData = AData{ .ipv4 = "66.66.66.66" };
+        const record: ResourceRecord = ResourceRecord{ .class = .IN, .type = .A, .ttl = 300, .name = rr.questions[0].name, .rdlength = 4, .rdata = .{ .A = adata } };
+
+        try rr.addAnswer(record);
+        std.debug.print("{}\n", .{rr});
+
+        var response = std.ArrayListUnmanaged(u8){};
+        defer response.deinit(allocator);
+
+        const writer = response.writer(allocator);
+
+        try rr.encode(writer);
+
+        _ = posix.sendto(socket, response.items, 0, &client_address.any, client_address_len) catch |err| {
+            std.debug.print("error writing: {}\n", .{err});
+            continue;
+        };
+
+        // std.debug.print("wrote: {d}\n", .{wrote});
 
         // if (wrote != read) {
         //     std.debug.print("couldn't write the whole response back, exiting!", .{});

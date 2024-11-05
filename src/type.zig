@@ -68,10 +68,14 @@ pub const AData = struct {
     }
 
     pub fn format(self: AData, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
         _ = options;
 
-        try writer.print("{s}", .{self.ipv4});
+        if (comptime std.mem.eql(u8, fmt, "w")) {
+            const addr = try AData.encode_ipv4(self.ipv4);
+            try writer.writeInt(u32, addr, .big);
+        } else {
+            try writer.print("{s}", .{self.ipv4});
+        }
     }
 };
 
