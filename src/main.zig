@@ -430,13 +430,13 @@ pub fn main() !void {
     try posix.setsockopt(socket, posix.SOL.SOCKET, posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1)));
     try posix.bind(socket, &address.any, address.getOsSockLen());
 
-    var buf: [512]u8 = undefined;
+    var request_buffer: [512]u8 = undefined;
 
     while (true) {
         var client_address: net.Address = undefined;
         var client_address_len: posix.socklen_t = @sizeOf(net.Address);
 
-        const read = posix.recvfrom(socket, &buf, 0, &client_address.any, &client_address_len) catch |err| {
+        const read = posix.recvfrom(socket, &request_buffer, 0, &client_address.any, &client_address_len) catch |err| {
             std.debug.print("error reading: {}\n", .{err});
             continue;
         };
@@ -447,7 +447,7 @@ pub fn main() !void {
 
         std.debug.print("[{}] -> ", .{client_address});
 
-        const request = buf[0..read];
+        const request = request_buffer[0..read];
 
         var rr: RequestResponse = try RequestResponse.decode(allocator, request);
         std.debug.print("{}\n", .{rr});
