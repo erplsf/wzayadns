@@ -161,7 +161,7 @@ const Class = enum(u16) {
 
 // TODO: add DoS protection - limit maximum jumps
 // TODO: add more protections from another RFC document: https://datatracker.ietf.org/doc/rfc9267/
-// FIXME: leaks memory
+/// The caller owns the returned memory.
 pub fn decode_name(allocator: std.mem.Allocator, buf: *FBType) ![]const u8 {
     const reader = buf.reader();
 
@@ -237,7 +237,7 @@ test "decodes name with a pointer" {
     allocator.free(decoded_name);
 }
 
-// FIXME: leaks memory
+/// The caller owns the returned memory.
 pub fn encode_name(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
     var result = std.ArrayListUnmanaged(u8){};
     errdefer result.deinit(allocator);
@@ -302,6 +302,10 @@ const Question = struct {
         try writer.writeInt(u16, @intFromEnum(self.class), .big);
     }
 
+    pub fn deinit(self: *Question, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+    }
+
     // pub fn format(self: Question, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
     //     _ = options;
 
@@ -311,6 +315,25 @@ const Question = struct {
     //     }
     // }
 };
+
+test "decodes question" {
+    const raw_question: []const u8 = &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+        0, 1, // type A
+        0, 1, // class IN
+    };
+
+    var fb = std.io.fixedBufferStream(raw_question);
+
+    const allocator = std.testing.allocator;
+
+    var q = try Question.decode(allocator, &fb);
+    defer q.deinit(allocator);
+
+    try std.testing.expectEqualStrings("www.google.com.", q.name);
+    try std.testing.expectEqual(Type.A, q.type);
+    try std.testing.expectEqual(Class.IN, q.class);
+}
 
 const ResourceRecord = struct {
     name: []const u8,
