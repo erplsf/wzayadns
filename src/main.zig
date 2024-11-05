@@ -238,7 +238,6 @@ test "decodes name with a pointer" {
 }
 
 // FIXME: leaks memory
-// TODO: add test first thing tomorrow!
 pub fn encode_name(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
     var result = std.ArrayListUnmanaged(u8){};
     errdefer result.deinit(allocator);
@@ -260,6 +259,20 @@ pub fn encode_name(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
     }
 
     return try result.toOwnedSlice(allocator);
+}
+
+test "encodes simple name" {
+    const raw_name: []const u8 = &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+    };
+    const name: []const u8 = "www.google.com.";
+
+    const allocator = std.testing.allocator;
+
+    const encoded_name = try encode_name(allocator, name);
+    defer allocator.free(encoded_name);
+
+    try std.testing.expectEqualSlices(u8, raw_name, encoded_name);
 }
 
 const Question = struct {
