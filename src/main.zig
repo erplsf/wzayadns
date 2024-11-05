@@ -193,6 +193,50 @@ pub fn decode_name(allocator: std.mem.Allocator, buf: *FBType) ![]const u8 {
     return try result.toOwnedSlice();
 }
 
+test "decodes simple name" {
+    const raw_name: []const u8 = &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+    };
+    const name: []const u8 = "www.google.com.";
+
+    var fb = std.io.fixedBufferStream(raw_name);
+
+    const allocator = std.testing.allocator;
+
+    const decoded_name = try decode_name(allocator, &fb);
+    defer allocator.free(decoded_name);
+
+    try std.testing.expectEqualStrings(name, decoded_name);
+}
+
+test "decodes name with a pointer" {
+    const raw_name: []const u8 = &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+        0b11000000, 0b00000000, // www.google.com.
+        0b11000000, 0b00000100, // google.com.
+        0b11000000, 0b00001011, // com.
+    };
+
+    var fb = std.io.fixedBufferStream(raw_name);
+
+    const allocator = std.testing.allocator;
+
+    try fb.seekTo(raw_name.len - 6);
+    var decoded_name = try decode_name(allocator, &fb);
+    try std.testing.expectEqualStrings("www.google.com.", decoded_name);
+    allocator.free(decoded_name);
+
+    try fb.seekTo(raw_name.len - 4);
+    decoded_name = try decode_name(allocator, &fb);
+    try std.testing.expectEqualStrings("google.com.", decoded_name);
+    allocator.free(decoded_name);
+
+    try fb.seekTo(raw_name.len - 2);
+    decoded_name = try decode_name(allocator, &fb);
+    try std.testing.expectEqualStrings("com.", decoded_name);
+    allocator.free(decoded_name);
+}
+
 // FIXME: leaks memory
 // TODO: add test first thing tomorrow!
 pub fn encode_name(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
