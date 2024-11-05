@@ -15,10 +15,10 @@ const Opcode = enum(u4) {
 };
 
 const Flags = packed struct(u4) {
-    AA: bool = false,
-    TC: bool = false,
-    RD: bool = false,
-    RA: bool = false,
+    AA: bool = false, // Authorative Answer
+    TC: bool = false, // TrunCation
+    RD: bool = false, // Recursion Desired
+    RA: bool = false, // Recursion Available
 };
 
 const ResponseCode = enum(u4) {
