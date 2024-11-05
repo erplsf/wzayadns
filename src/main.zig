@@ -275,6 +275,7 @@ test "encodes simple name" {
     try std.testing.expectEqualSlices(u8, raw_name, encoded_name);
 }
 
+// TODO: add errors for other/unsupported types/classes
 const Question = struct {
     name: []const u8,
     type: Type,
