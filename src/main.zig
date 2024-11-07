@@ -275,12 +275,12 @@ test "encodes simple name" {
     try std.testing.expectEqualSlices(u8, raw_name, encoded_name);
 }
 
-// TODO: add errors for other/unsupported types/classes
 const Question = struct {
     name: []const u8,
     type: Type,
     class: Class,
 
+    /// The caller must call deinit().
     pub fn decode(allocator: std.mem.Allocator, buf: *FBType) !Question {
         const reader = buf.reader();
 
@@ -297,6 +297,7 @@ const Question = struct {
 
     pub fn encode(self: Question, allocator: std.mem.Allocator, writer: anytype) !void {
         const name = try encode_name(allocator, self.name);
+        defer allocator.free(name);
 
         try writer.writeAll(name);
         try writer.writeInt(u16, @intFromEnum(self.type), .big);
@@ -334,6 +335,25 @@ test "decodes question" {
     try std.testing.expectEqualStrings("www.google.com.", q.name);
     try std.testing.expectEqual(Type.A, q.type);
     try std.testing.expectEqual(Class.IN, q.class);
+}
+
+test "encodes simple question" {
+    const raw_question: []const u8 = &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+        0, 6, // type SOA
+        0, 1, // class IN
+    };
+
+    var q: Question = Question{ .name = "www.google.com.", .type = .SOA, .class = .IN };
+
+    const allocator = std.testing.allocator;
+    var r = std.ArrayListUnmanaged(u8){};
+    defer r.deinit(allocator);
+
+    const writer = r.writer(allocator);
+    try q.encode(allocator, writer);
+
+    try std.testing.expectEqualSlices(u8, raw_question, r.items);
 }
 
 const ResourceRecord = struct {
@@ -570,3 +590,4 @@ test {
 
 // TODO: add test that verify that all parts decode and encode into the same byte sequence
 // TODO: add tests that verifies values after decoding
+// TODO: add errors for other/unsupported types/classes
