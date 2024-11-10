@@ -416,6 +416,7 @@ const ResourceRecord = struct {
 
     pub fn encode(self: ResourceRecord, allocator: std.mem.Allocator, writer: anytype) !void {
         const name = try encode_name(allocator, self.name);
+        defer allocator.free(name);
 
         try writer.writeAll(name);
         try writer.writeInt(u16, @intFromEnum(self.type), .big);
@@ -442,7 +443,7 @@ test "decodes RR" {
         0, 1, // class IN
         0, 0, 0b1, 0b00101100, // ttl 300 s
         0,    4, // RDATA length
-        0xEF, 0,
+        0x7F, 0,
         0,
         0x01, // 127.0.0.1
     };
@@ -457,6 +458,29 @@ test "decodes RR" {
     try std.testing.expectEqual(.A, rr.type);
     try std.testing.expectEqual(.IN, rr.class);
     try std.testing.expectEqual(300, rr.ttl);
+    try std.testing.expectEqualStrings("127.0.0.1", rr.rdata.A.ipv4);
+}
+
+test "encodes RR" {
+    const rr = ResourceRecord{ .name = "www.google.com.", .type = .SOA, .class = .IN, .ttl = 300, .rdlength = 4, .rdata = .{ .A = .{ .ipv4 = "127.127.127.127" } } };
+
+    const allocator = std.testing.allocator;
+    var r = std.ArrayListUnmanaged(u8){};
+    defer r.deinit(allocator);
+
+    const writer = r.writer(allocator);
+
+    try rr.encode(allocator, writer);
+
+    try std.testing.expectEqualSlices(u8, &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+        0, 6, // type SOA
+        0, 1, // class IN
+        0, 0, 0b1, 0b00101100, // ttl 300 s
+        0,    4, // RDATA length
+        0x7F, 0x7F,
+        0x7F, 0x7F, // 127.0.0.1
+    }, r.items);
 }
 
 const RequestResponse = struct {
