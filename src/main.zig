@@ -808,6 +808,4 @@ test {
     _ = @import("type.zig");
 }
 
-// TODO: add test that verify that all parts decode and encode into the same byte sequence
-// TODO: add tests that verifies values after decoding
 // TODO: add errors for other/unsupported types/classes
