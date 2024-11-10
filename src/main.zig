@@ -159,8 +159,17 @@ const Class = enum(u16) {
     _,
 };
 
-// TODO: add DoS protection - limit maximum jumps
+const NameParsingError = error{
+    NameTooLong,
+    JumpForwardPresent,
+    SameJumpEncountered,
+};
+
 // TODO: add more protections from another RFC document: https://datatracker.ietf.org/doc/rfc9267/
+// implemented checks:
+// * name length validation
+// * loops detection
+// * prevention of forward jumps
 /// The caller owns the returned memory.
 pub fn decode_name(allocator: std.mem.Allocator, buf: *FBType) ![]const u8 {
     const reader = buf.reader();
@@ -168,21 +177,35 @@ pub fn decode_name(allocator: std.mem.Allocator, buf: *FBType) ![]const u8 {
     var result = std.ArrayList(u8).init(allocator);
     errdefer result.deinit();
 
+    var encountered_jumps = std.ArrayListUnmanaged(u16){};
+    defer encountered_jumps.deinit(allocator);
+
     var ret_address: usize = 0; // HACK: jump address itself can be possibly zero, but i use zero here to determine base case
     while (true) {
         const length = try reader.readByte();
         if (length == 0) break; // null byte, end of label, break out
 
-        if (length & 0b11000000 == 0b11000000) { // it's an offset
+        if (length & 0b11000000 == 0b11000000) { // it's an offset / compression pointer
             try buf.seekBy(-1); // move back one byte
             const offset = try reader.readInt(u16, .big) ^ 0b11000000_00000000; // clean offset
+
+            if (offset > try buf.getPos()) return NameParsingError.JumpForwardPresent;
+
+            if (std.mem.indexOfScalar(u16, encountered_jumps.items, offset)) |_| {
+                return NameParsingError.SameJumpEncountered;
+            }
+
             ret_address = try buf.getPos(); // save return address
             try buf.seekTo(offset); // move cursor to correct position
+            try encountered_jumps.append(allocator, offset);
+
             continue; // start loop again
         }
 
         try result.appendSlice(buf.buffer[buf.pos .. buf.pos + length]);
         try result.append('.');
+
+        if (result.items.len > 255) return NameParsingError.NameTooLong;
 
         try buf.seekBy(length); // move the cursor forward
     }
@@ -235,6 +258,37 @@ test "decodes names with a pointer" {
     decoded_name = try decode_name(allocator, &fb);
     try std.testing.expectEqualStrings("com.", decoded_name);
     allocator.free(decoded_name);
+}
+
+test "decode errors" {
+    const raw_name: []const u8 = &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+        0b11111111, 0b00000000, // jump forward
+        0b11000000, 18, // loop
+    };
+    const too_long_name: []const u8 = ((&[_]u8{63} ++ &[_]u8{'o'} ** 63) ** 4) ++ &[_]u8{0};
+
+    var fb = std.io.fixedBufferStream(raw_name);
+    var fb_too_long = std.io.fixedBufferStream(too_long_name);
+
+    const allocator = std.testing.allocator;
+
+    try fb.seekTo(16);
+    try std.testing.expectError(
+        NameParsingError.JumpForwardPresent,
+        decode_name(allocator, &fb),
+    );
+
+    try fb.seekTo(18);
+    try std.testing.expectError(
+        NameParsingError.SameJumpEncountered,
+        decode_name(allocator, &fb),
+    );
+
+    try std.testing.expectError(
+        NameParsingError.NameTooLong,
+        decode_name(allocator, &fb_too_long),
+    );
 }
 
 /// The caller owns the returned memory.
