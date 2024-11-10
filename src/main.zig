@@ -608,11 +608,11 @@ test "decodes request" {
     var fb = std.io.fixedBufferStream(raw_question);
 
     var q = try Question.decode(allocator, &fb);
+    defer q.deinit(allocator);
+
     var qs = try allocator.alloc(Question, 1);
     defer allocator.free(qs);
     qs[0] = q;
-
-    defer q.deinit(allocator);
 
     const r: RequestResponse = .{
         .allocator = allocator,
@@ -630,7 +630,57 @@ test "decodes request" {
     try std.testing.expectEqual(@as(u16, 0), r.additionals.len);
 }
 
-test "encodes response" {}
+test "encodes response" {
+    const allocator = std.testing.allocator;
+
+    const raw_question: []const u8 = &[_]u8{
+        6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+        0, 1, // type A
+        0, 1, // class IN
+    };
+
+    var fb = std.io.fixedBufferStream(raw_question);
+
+    var q = try Question.decode(allocator, &fb);
+    defer q.deinit(allocator);
+
+    var qs = try allocator.alloc(Question, 1);
+    defer allocator.free(qs);
+
+    qs[0] = q;
+
+    var r: RequestResponse = .{
+        .allocator = allocator,
+        .header = .{ .id = 61084, .response = true, .opcode = .Query, .flags = .{ .AA = true, .TC = false, .RD = false, .RA = false }, .Z = 0, .rcode = .NoError, .QCount = 1, .ANCount = 1, .NSCount = 0, .ARCount = 0 },
+        .questions = qs,
+        .answers = std.ArrayListUnmanaged(ResourceRecord){},
+        .authorities = &[_]ResourceRecord{},
+        .additionals = &[_]ResourceRecord{},
+    };
+    defer r.answers.deinit(allocator);
+
+    try r.addAnswer(.{
+        .name = "google.com.",
+        .type = .A,
+        .class = .IN,
+        .ttl = 300,
+        .rdlength = 4,
+        .rdata = .{ .A = .{ .ipv4 = "127.0.0.1" } },
+    });
+
+    const raw_response: []const u8 = &[_]u8{
+        0xee, 0x9c, 0x84, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01, 0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2c, 0x00, 0x04, 0x7f, 0x00, 0x00, 0x01,
+    };
+
+    var re = std.ArrayListUnmanaged(u8){};
+    defer re.deinit(allocator);
+
+    const writer = re.writer(allocator);
+
+    try r.encode(writer);
+
+    try std.testing.expectEqualSlices(u8, raw_response, re.items);
+}
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
