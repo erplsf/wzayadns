@@ -209,7 +209,7 @@ test "decodes simple name" {
     try std.testing.expectEqualStrings(name, decoded_name);
 }
 
-test "decodes name with a pointer" {
+test "decodes names with a pointer" {
     const raw_name: []const u8 = &[_]u8{
         3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
         0b11000000, 0b00000000, // www.google.com.
@@ -364,7 +364,7 @@ const ResourceRecord = struct {
     rdlength: u16,
     rdata: RData,
 
-    // FIXME: leaks memory
+    /// The caller must call deinit().
     pub fn decode(allocator: std.mem.Allocator, buf: *FBType) !ResourceRecord {
         const reader = buf.reader();
 
@@ -396,6 +396,19 @@ const ResourceRecord = struct {
         };
     }
 
+    pub fn deinit(self: *ResourceRecord, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+
+        switch (self.rdata) {
+            inline else => |*d| {
+                const T = @TypeOf(d.*);
+                if (std.meta.hasFn(T, "deinit")) {
+                    d.deinit(allocator);
+                }
+            },
+        }
+    }
+
     // FIXME: leaks memory
     pub fn build(allocator: std.mem.Allocator) void {
         _ = allocator;
@@ -421,6 +434,30 @@ const ResourceRecord = struct {
     //     }
     // }
 };
+
+test "decodes RR" {
+    const raw_rr: []const u8 = &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+        0, 1, // type A
+        0, 1, // class IN
+        0, 0, 0b1, 0b00101100, // ttl 300 s
+        0,    4, // RDATA length
+        0xEF, 0,
+        0,
+        0x01, // 127.0.0.1
+    };
+
+    var fb = std.io.fixedBufferStream(raw_rr);
+
+    const allocator = std.testing.allocator;
+    var rr = try ResourceRecord.decode(allocator, &fb);
+    defer rr.deinit(allocator);
+
+    try std.testing.expectEqualStrings("www.google.com.", rr.name);
+    try std.testing.expectEqual(.A, rr.type);
+    try std.testing.expectEqual(.IN, rr.class);
+    try std.testing.expectEqual(300, rr.ttl);
+}
 
 const RequestResponse = struct {
     allocator: std.mem.Allocator,

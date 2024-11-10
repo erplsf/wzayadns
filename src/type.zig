@@ -31,11 +31,15 @@ pub const Type = enum(u16) {
 pub const AData = struct {
     ipv4: []const u8,
 
-    // FIXME: leaks memory
+    /// The caller must call deinit().
     pub fn decode(allocator: std.mem.Allocator, addr: u32) !RData {
         const data = try AData.decode_ipv4(allocator, addr);
 
         return .{ .A = .{ .ipv4 = data } };
+    }
+
+    pub fn deinit(self: *AData, allocator: std.mem.Allocator) void {
+        allocator.free(self.ipv4);
     }
 
     pub fn decode_ipv4(allocator: std.mem.Allocator, addr: u32) ![]const u8 {
