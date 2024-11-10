@@ -492,7 +492,7 @@ const RequestResponse = struct {
     authorities: []ResourceRecord,
     additionals: []ResourceRecord,
 
-    // FIXME: leaks memory
+    /// The caller must call deinit().
     pub fn decode(allocator: std.mem.Allocator, buf: []const u8) !RequestResponse {
         var bufStream = std.io.fixedBufferStream(buf);
 
@@ -552,6 +552,20 @@ const RequestResponse = struct {
         }
     }
 
+    pub fn deinit(self: *RequestResponse) void {
+        for (self.questions) |*i| i.deinit(self.allocator);
+        self.allocator.free(self.questions);
+
+        for (self.answers.items) |*i| i.deinit(self.allocator);
+        self.answers.deinit(self.allocator);
+
+        for (self.authorities) |*i| i.deinit(self.allocator);
+        self.allocator.free(self.authorities);
+
+        for (self.additionals) |*i| i.deinit(self.allocator);
+        self.allocator.free(self.additionals);
+    }
+
     pub fn addAnswer(self: *RequestResponse, record: ResourceRecord) !void {
         try self.answers.append(self.allocator, record);
     }
@@ -576,6 +590,47 @@ const RequestResponse = struct {
     //     }
     // }
 };
+
+test "decodes request" {
+    const raw_request: []const u8 = &[_]u8{ 0xee, 0x9c, 0x01, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01 };
+
+    const allocator = std.testing.allocator;
+
+    var rr = try RequestResponse.decode(allocator, raw_request);
+    defer rr.deinit();
+
+    const raw_question: []const u8 = &[_]u8{
+        3, 'w', 'w', 'w', 6, 'g', 'o', 'o', 'g', 'l', 'e', 3, 'c', 'o', 'm', 0,
+        0, 1, // type A
+        0, 1, // class IN
+    };
+
+    var fb = std.io.fixedBufferStream(raw_question);
+
+    var q = try Question.decode(allocator, &fb);
+    var qs = try allocator.alloc(Question, 1);
+    defer allocator.free(qs);
+    qs[0] = q;
+
+    defer q.deinit(allocator);
+
+    const r: RequestResponse = .{
+        .allocator = allocator,
+        .header = .{ .id = 61084, .response = false, .opcode = .Query, .flags = .{ .AA = false, .TC = false, .RD = true, .RA = false }, .Z = 2, .rcode = .NoError, .QCount = 1, .ANCount = 0, .NSCount = 0, .ARCount = 0 },
+        .questions = qs,
+        .answers = std.ArrayListUnmanaged(ResourceRecord){},
+        .authorities = &[_]ResourceRecord{},
+        .additionals = &[_]ResourceRecord{},
+    };
+
+    try std.testing.expectEqualDeep(r.header, rr.header);
+    try std.testing.expectEqualDeep(r.questions, qs);
+    try std.testing.expectEqual(@as(u16, 0), r.answers.items.len);
+    try std.testing.expectEqual(@as(u16, 0), r.authorities.len);
+    try std.testing.expectEqual(@as(u16, 0), r.additionals.len);
+}
+
+test "encodes response" {}
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
