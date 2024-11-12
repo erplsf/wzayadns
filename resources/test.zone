@@ -1,0 +1,10 @@
+example.com. IN 300 SOA ns.example.com. dns.example.com. (
+                                 17      ; SERIAL
+                                 7200   ; REFRESH
+                                 600    ; RETRY
+                                 3600000; EXPIRE
+                                 60)    ; MINIMUM
+
+example.com. IN 300 NS ns.example.com.
+
+ns.example.com. IN 300 A 127.0.0.1
