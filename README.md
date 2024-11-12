@@ -8,7 +8,7 @@
 * Performance
 * Stability
 
-Used materials:
+## Used materials:
 * https://datatracker.ietf.org/doc/html/rfc1035
 * https://datatracker.ietf.org/doc/rfc9267/
 * https://beej.us/guide/bgnet/html/#setsockoptman
