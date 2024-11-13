@@ -7,6 +7,8 @@ const Type = dns_type.Type;
 const AData = dns_type.AData;
 const RData = dns_type.RData;
 
+const Z = @import("zone.zig");
+
 const Opcode = enum(u4) {
     Query = 0,
     InverseQuery = 1,
@@ -736,11 +738,7 @@ test "encodes response" {
     try std.testing.expectEqualSlices(u8, raw_response, re.items);
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
+pub fn run_udp(allocator: std.mem.Allocator) !void {
     const address = try std.net.Address.parseIp("127.0.0.1", 5353);
 
     const tpe: u32 = posix.SOCK.DGRAM;
@@ -802,6 +800,17 @@ pub fn main() !void {
         //     break;
         // }
     }
+}
+
+pub fn main() !void {
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // defer _ = gpa.deinit();
+    // const allocator = gpa.allocator();
+
+    const zone: Z.Zone = try Z.parse_zone_file("./resources/test.zone");
+    std.debug.print("{}\n", .{zone});
+
+    // try run_udp(allocator);
 }
 
 test {
