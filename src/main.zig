@@ -149,7 +149,7 @@ test "header decodes/encodes to the same byte sequence" {
     try std.testing.expectEqualSlices(u8, raw_header, list.items);
 }
 
-const Class = enum(u16) {
+pub const Class = enum(u16) {
     // Regular classes
     IN = 1,
     CS = 2,
@@ -803,11 +803,11 @@ pub fn run_udp(allocator: std.mem.Allocator) !void {
 }
 
 pub fn main() !void {
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit();
-    // const allocator = gpa.allocator();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    const zone: Z.Zone = try Z.parse_zone_file("./resources/test.zone");
+    const zone: Z.Zone = try Z.parse_zone_file(allocator, "./resources/test.zone");
     std.debug.print("{}\n", .{zone});
 
     // try run_udp(allocator);
