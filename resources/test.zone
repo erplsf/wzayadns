@@ -1,5 +1,5 @@
 example.com. IN 300 SOA ns.example.com. dns.example.com. (
-                                 17      ; SERIAL
+                                 41      ; SERIAL
                                  7200   ; REFRESH
                                  600    ; RETRY
                                  3600000; EXPIRE

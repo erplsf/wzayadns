@@ -133,6 +133,8 @@ pub fn parse_zone_file(allocator: std.mem.Allocator, path: []const u8) !Zone {
             }
         }
 
+        std.debug.print("rest: {s}\n", .{it.rest()});
+
         std.debug.print("entry: {s}\n", .{entry});
         std.debug.print("name: {s}, class: {}, type: {}, ttl: {d}\n", .{ name, class, @"type", ttl });
     }

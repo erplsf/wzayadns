@@ -465,7 +465,7 @@ const ResourceRecord = struct {
         }
     }
 
-    // FIXME: leaks memory
+    /// The caller must call deinit().
     pub fn build(allocator: std.mem.Allocator) void {
         _ = allocator;
     }
